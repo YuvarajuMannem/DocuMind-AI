@@ -40,7 +40,10 @@ async def upload_document(file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, tmp_file)
         tmp_file.close() # Close file descriptor so PDF readers can open it
             
-        chunks_created, total_indexed = rag_engine.process_and_index_document(tmp_path, file.filename)
+        from fastapi.concurrency import run_in_threadpool
+        chunks_created, total_indexed = await run_in_threadpool(
+            rag_engine.process_and_index_document, tmp_path, file.filename
+        )
         
         return DocumentUploadResponse(
             filename=file.filename,

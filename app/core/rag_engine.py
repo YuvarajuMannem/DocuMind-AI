@@ -75,12 +75,13 @@ class RAGEngine:
         if ext == ".pdf":
             try:
                 loader = PyPDFLoader(file_path)
-                documents = loader.load()
+                raw_docs = loader.load()
+                documents = raw_docs[:30] # Process max 30 pages for high-speed indexing
             except Exception as pdf_err:
                 print(f"PyPDFLoader notice: {pdf_err}, using pypdf reader fallback...")
                 import pypdf
                 reader = pypdf.PdfReader(file_path)
-                for page_idx, page in enumerate(reader.pages):
+                for page_idx, page in enumerate(reader.pages[:30]):
                     extracted_text = page.extract_text()
                     if extracted_text and extracted_text.strip():
                         documents.append(Document(

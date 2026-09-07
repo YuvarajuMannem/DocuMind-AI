@@ -390,13 +390,21 @@
           method: 'POST',
           body: formData
         });
-        const data = await res.json();
+        const text = await res.text();
+        let data = {};
+        try {
+          data = JSON.parse(text);
+        } catch(err) {
+          if (!res.ok) {
+            throw new Error(`Server HTTP ${res.status}: ${text || 'Empty response'}`);
+          }
+        }
 
         if(res.ok) {
           document.getElementById('uploadStatus').innerText = `✅ Indexed '${data.filename}' into ${data.chunks_created} vectors!`;
           fetchStats();
         } else {
-          document.getElementById('uploadStatus').innerText = `❌ Error: ${data.detail || res.statusText || 'Upload failed'}`;
+          document.getElementById('uploadStatus').innerText = `❌ Error (${res.status}): ${data.detail || text || res.statusText}`;
         }
       } catch(e) {
         document.getElementById('uploadStatus').innerText = `❌ Upload failed: ${e.message || e}`;
