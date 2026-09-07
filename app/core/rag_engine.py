@@ -6,7 +6,6 @@ from pathlib import Path
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.documents import Document
 
 from app.config import settings
@@ -14,11 +13,7 @@ from app.schemas.schemas import SourceDocument, QueryResponse
 
 class RAGEngine:
     def __init__(self):
-        self.embeddings = HuggingFaceEmbeddings(
-            model_name=settings.EMBEDDING_MODEL_NAME,
-            model_kwargs={'device': 'cpu'},
-            encode_kwargs={'normalize_embeddings': True}
-        )
+        self._embeddings = None
         self.vector_store: FAISS = None
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=settings.CHUNK_SIZE,
@@ -26,10 +21,29 @@ class RAGEngine:
             separators=["\n\n", "\n", " ", ""]
         )
         self.total_docs_indexed = 0
-        self._initialize_vector_store()
 
-    def _initialize_vector_store(self):
-        """Initializes empty FAISS index or loads existing persistent index."""
+    @property
+    def embeddings(self):
+        """Lazy loads lightweight embedding model on demand to minimize startup RAM."""
+        if self._embeddings is None:
+            try:
+                from langchain_community.embeddings import FastEmbedEmbeddings
+                self._embeddings = FastEmbedEmbeddings(model_name="BAAI/bge-small-en-v1.5")
+            except Exception as e:
+                print(f"FastEmbed fallback to HuggingFaceEmbeddings: {e}")
+                from langchain_community.embeddings import HuggingFaceEmbeddings
+                self._embeddings = HuggingFaceEmbeddings(
+                    model_name=settings.EMBEDDING_MODEL_NAME,
+                    model_kwargs={'device': 'cpu'},
+                    encode_kwargs={'normalize_embeddings': True}
+                )
+        return self._embeddings
+
+    def _ensure_vector_store(self):
+        """Lazy initializes vector store when first accessed."""
+        if self.vector_store is not None:
+            return
+            
         vector_db_path = Path(settings.VECTOR_DB_DIR)
         if vector_db_path.exists() and (vector_db_path / "index.faiss").exists():
             try:
@@ -53,6 +67,8 @@ class RAGEngine:
 
     def process_and_index_document(self, file_path: str, filename: str) -> Tuple[int, int]:
         """Loads file, splits into semantic chunks, and indexes vectors in FAISS."""
+        self._ensure_vector_store()
+        
         ext = os.path.splitext(filename)[1].lower()
         if ext == ".pdf":
             loader = PyPDFLoader(file_path)
@@ -79,6 +95,8 @@ class RAGEngine:
 
     def query(self, user_query: str, top_k: int = 4) -> QueryResponse:
         """Executes RAG Pipeline: Vector Similarity Search -> Context Assembly -> LLM QA Generation."""
+        self._ensure_vector_store()
+        
         start_retrieval = time.time()
         
         # Vector Similarity Search with relevance scores

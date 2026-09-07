@@ -6,6 +6,7 @@ langchain>=0.1.0
 langchain-community>=0.0.10
 langchain-core>=0.1.10
 faiss-cpu>=1.7.4
+fastembed>=0.2.0
 sentence-transformers>=2.2.2
 pypdf>=3.17.0
 python-multipart>=0.0.6
