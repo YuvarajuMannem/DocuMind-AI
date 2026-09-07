@@ -70,25 +70,50 @@ class RAGEngine:
         self._ensure_vector_store()
         
         ext = os.path.splitext(filename)[1].lower()
+        documents = []
+        
         if ext == ".pdf":
-            loader = PyPDFLoader(file_path)
-            documents = loader.load()
+            try:
+                loader = PyPDFLoader(file_path)
+                documents = loader.load()
+            except Exception as pdf_err:
+                print(f"PyPDFLoader notice: {pdf_err}, using pypdf reader fallback...")
+                import pypdf
+                reader = pypdf.PdfReader(file_path)
+                for page_idx, page in enumerate(reader.pages):
+                    extracted_text = page.extract_text()
+                    if extracted_text and extracted_text.strip():
+                        documents.append(Document(
+                            page_content=extracted_text,
+                            metadata={"source": filename, "page": page_idx + 1}
+                        ))
+                if not documents:
+                    raise ValueError(f"Could not extract text from '{filename}'. The file may be empty or an image-only scanned PDF.")
         else:
-            loader = TextLoader(file_path, encoding="utf-8")
-            documents = loader.load()
+            try:
+                loader = TextLoader(file_path, encoding="utf-8")
+                documents = loader.load()
+            except Exception:
+                loader = TextLoader(file_path, encoding="latin-1")
+                documents = loader.load()
 
         for doc in documents:
             doc.metadata["source"] = filename
 
         # Chunk text recursively using LangChain splitter
         chunks = self.text_splitter.split_documents(documents)
-        
+        if not chunks:
+            chunks = documents
+
         # Add chunks to vector database index
         self.vector_store.add_documents(chunks)
         
         # Save updated index to disk
-        os.makedirs(settings.VECTOR_DB_DIR, exist_ok=True)
-        self.vector_store.save_local(settings.VECTOR_DB_DIR)
+        try:
+            os.makedirs(settings.VECTOR_DB_DIR, exist_ok=True)
+            self.vector_store.save_local(settings.VECTOR_DB_DIR)
+        except Exception as io_err:
+            print(f"Notice: Index updated in memory (disk write warning: {io_err})")
         
         self.total_docs_indexed += len(chunks)
         return len(chunks), self.total_docs_indexed

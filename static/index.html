@@ -396,10 +396,10 @@
           document.getElementById('uploadStatus').innerText = `✅ Indexed '${data.filename}' into ${data.chunks_created} vectors!`;
           fetchStats();
         } else {
-          document.getElementById('uploadStatus').innerText = `❌ Error: ${data.detail}`;
+          document.getElementById('uploadStatus').innerText = `❌ Error: ${data.detail || res.statusText || 'Upload failed'}`;
         }
       } catch(e) {
-        document.getElementById('uploadStatus').innerText = "❌ Upload failed";
+        document.getElementById('uploadStatus').innerText = `❌ Upload failed: ${e.message || e}`;
       }
     }
 

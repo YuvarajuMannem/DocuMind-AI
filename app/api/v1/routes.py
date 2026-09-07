@@ -32,14 +32,15 @@ async def upload_document(file: UploadFile = File(...)):
             detail=f"Unsupported file format '{file_ext}'. Allowed formats: {allowed_extensions}"
         )
         
+    tmp_path = None
     try:
         # Save temporary file for LangChain loader processing
-        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp_file:
-            shutil.copyfileobj(file.file, tmp_file)
-            tmp_path = tmp_file.name
+        tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=file_ext)
+        tmp_path = tmp_file.name
+        shutil.copyfileobj(file.file, tmp_file)
+        tmp_file.close() # Close file descriptor so PDF readers can open it
             
         chunks_created, total_indexed = rag_engine.process_and_index_document(tmp_path, file.filename)
-        os.remove(tmp_path)
         
         return DocumentUploadResponse(
             filename=file.filename,
@@ -49,10 +50,17 @@ async def upload_document(file: UploadFile = File(...)):
             message=f"Successfully processed '{file.filename}' into {chunks_created} vector chunks."
         )
     except Exception as e:
+        print(f"Upload error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to index document '{file.filename}': {str(e)}"
         )
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
 
 @router.post(
     "/rag/query", 
