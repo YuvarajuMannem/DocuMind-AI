@@ -1,6 +1,6 @@
-# ⚡ Enterprise RAG Knowledge Engine (FastAPI + LangChain + FAISS)
+# ⚡ DocuMind AI (Enterprise RAG Document Intelligence Engine)
 
-A high-performance, asynchronous Retrieval-Augmented Generation (RAG) backend engine designed for domain-specific document intelligence. Built using **FastAPI**, **LangChain**, **Sentence-Transformers Embeddings**, **FAISS Vector Indexing**, and **Pydantic v2**.
+**DocuMind AI** is an enterprise-grade document intelligence assistant that transforms dense PDFs, manuals, and policy documents into an interactive, context-aware AI search and Q&A microservice. Built with **FastAPI**, **LangChain**, **Sentence-Transformers Embeddings**, **FAISS Vector Indexing**, and **Pydantic v2**.
 
 ---
 

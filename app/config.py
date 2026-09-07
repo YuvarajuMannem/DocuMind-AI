@@ -2,7 +2,7 @@ import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "Enterprise Document Intelligence RAG Engine"
+    PROJECT_NAME: str = "DocuMind AI - Document Intelligence & RAG Engine"
     API_V1_STR: str = "/api/v1"
     
     # Vector DB & Embeddings Config
