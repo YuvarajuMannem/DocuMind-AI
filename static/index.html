@@ -222,6 +222,43 @@
       font-size: 0.75rem;
     }
 
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .nav-btn {
+      color: var(--text-main);
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 500;
+      padding: 0.45rem 0.85rem;
+      border-radius: 8px;
+      border: 1px solid var(--panel-border);
+      background: rgba(255,255,255,0.04);
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .nav-btn:hover {
+      background: rgba(107, 142, 107, 0.2);
+      border-color: var(--primary-olive);
+      color: var(--primary-glow);
+    }
+
+    .nav-btn.primary {
+      background: var(--primary-olive);
+      border-color: var(--primary-olive);
+      color: #fff;
+    }
+
+    .nav-btn.primary:hover {
+      background: var(--primary-glow);
+    }
+
     footer {
       border-top: 1px solid var(--panel-border);
       text-align: center;
@@ -238,8 +275,23 @@
     <div class="brand">
       <i class="fa-solid fa-brain"></i> DocuMind AI
     </div>
-    <div class="badge-status">
-      <span class="pulse"></span> RAG Engine Online
+    
+    <div class="nav-links">
+      <div class="badge-status">
+        <span class="pulse"></span> RAG Engine Online
+      </div>
+      <a href="https://yuvaraju-portfolio.vercel.app/" target="_blank" class="nav-btn">
+        <i class="fa-solid fa-globe"></i> Portfolio
+      </a>
+      <a href="https://www.linkedin.com/in/yuvaraju-mannem/" target="_blank" class="nav-btn">
+        <i class="fa-brands fa-linkedin"></i> LinkedIn
+      </a>
+      <a href="https://github.com/YuvarajuMannem/DocuMind-AI" target="_blank" class="nav-btn">
+        <i class="fa-brands fa-github"></i> GitHub
+      </a>
+      <a href="/docs" target="_blank" class="nav-btn primary">
+        <i class="fa-solid fa-book"></i> API Docs
+      </a>
     </div>
   </header>
 
@@ -305,7 +357,10 @@
   </div>
 
   <footer>
-    DocuMind AI Engine — Powered by <strong>LangChain</strong>, <strong>FastAPI</strong>, & <strong>FAISS</strong> | Designed by Yuvaraju Mannem
+    DocuMind AI Engine — Powered by <strong>LangChain</strong>, <strong>FastAPI</strong>, & <strong>FAISS</strong> | Engineered by <strong>Yuvaraju Mannem</strong> • 
+    <a href="https://yuvaraju-portfolio.vercel.app/" target="_blank" style="color:var(--primary-glow); text-decoration:none; margin: 0 0.4rem;"><i class="fa-solid fa-globe"></i> Portfolio</a> •
+    <a href="https://www.linkedin.com/in/yuvaraju-mannem/" target="_blank" style="color:var(--primary-glow); text-decoration:none; margin: 0 0.4rem;"><i class="fa-brands fa-linkedin"></i> LinkedIn</a> •
+    <a href="https://github.com/YuvarajuMannem/DocuMind-AI" target="_blank" style="color:var(--primary-glow); text-decoration:none; margin: 0 0.4rem;"><i class="fa-brands fa-github"></i> GitHub</a>
   </footer>
 
   <script>
