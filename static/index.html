@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DocuMind AI — Enterprise RAG Document Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    :root {
+      --bg-dark: #0f1410;
+      --panel-bg: rgba(24, 32, 25, 0.75);
+      --panel-border: rgba(100, 130, 102, 0.2);
+      --primary-olive: #6b8e6b;
+      --primary-glow: #8fae8f;
+      --text-main: #edf2ed;
+      --text-muted: #9aa89b;
+      --accent-badge: rgba(107, 142, 107, 0.15);
+      --card-bg: rgba(30, 42, 32, 0.6);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+
+    body {
+      background-color: var(--bg-dark);
+      background-image: 
+        radial-gradient(circle at 15% 15%, rgba(62, 79, 64, 0.25) 0%, transparent 40%),
+        radial-gradient(circle at 85% 85%, rgba(42, 54, 43, 0.3) 0%, transparent 45%);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Navbar */
+    header {
+      border-bottom: 1px solid var(--panel-border);
+      background: rgba(15, 20, 16, 0.85);
+      backdrop-filter: blur(12px);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    .brand i { color: var(--primary-olive); }
+
+    .badge-status {
+      background: var(--accent-badge);
+      border: 1px solid var(--panel-border);
+      color: var(--primary-glow);
+      padding: 0.35rem 0.8rem;
+      border-radius: 50px;
+      font-size: 0.8rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .pulse {
+      width: 8px;
+      height: 8px;
+      background: var(--primary-glow);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--primary-glow);
+    }
+
+    /* Layout Grid */
+    .container {
+      max-width: 1280px;
+      margin: 2rem auto;
+      padding: 0 1.5rem;
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 1.5rem;
+      width: 100%;
+      flex: 1;
+    }
+
+    @media (max-width: 900px) {
+      .container { grid-template-columns: 1fr; }
+    }
+
+    /* Glass Panel */
+    .panel {
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      backdrop-filter: blur(16px);
+      border-radius: 16px;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .panel-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* Upload Box */
+    .dropzone {
+      border: 2px dashed var(--panel-border);
+      border-radius: 12px;
+      padding: 2rem 1rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: rgba(0,0,0,0.15);
+    }
+
+    .dropzone:hover {
+      border-color: var(--primary-olive);
+      background: rgba(107, 142, 107, 0.05);
+    }
+
+    .dropzone i {
+      font-size: 2rem;
+      color: var(--primary-olive);
+      margin-bottom: 0.75rem;
+    }
+
+    .btn-action {
+      background: var(--primary-olive);
+      color: #fff;
+      border: none;
+      padding: 0.75rem 1.25rem;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      width: 100%;
+    }
+
+    .btn-action:hover {
+      background: var(--primary-glow);
+    }
+
+    /* Stats Grid */
+    .stats-card {
+      background: var(--card-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      padding: 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .stat-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--primary-glow);
+    }
+
+    /* Chat Section */
+    .query-box {
+      display: flex;
+      gap: 0.75rem;
+    }
+
+    .input-field {
+      flex: 1;
+      background: rgba(0,0,0,0.3);
+      border: 1px solid var(--panel-border);
+      color: var(--text-main);
+      padding: 0.85rem 1rem;
+      border-radius: 10px;
+      outline: none;
+      font-size: 0.95rem;
+    }
+
+    .input-field:focus {
+      border-color: var(--primary-olive);
+    }
+
+    /* Output Card */
+    .answer-box {
+      background: var(--card-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      min-height: 200px;
+    }
+
+    .source-chip {
+      background: rgba(107, 142, 107, 0.1);
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 0.75rem;
+      font-size: 0.85rem;
+    }
+
+    .score-badge {
+      float: right;
+      color: var(--primary-glow);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+    }
+
+    footer {
+      border-top: 1px solid var(--panel-border);
+      text-align: center;
+      padding: 1.25rem;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      margin-top: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <i class="fa-solid fa-brain"></i> DocuMind AI
+    </div>
+    <div class="badge-status">
+      <span class="pulse"></span> RAG Engine Online
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Left Sidebar: Ingestion & Vector Metrics -->
+    <div class="panel">
+      <div class="panel-title">
+        <i class="fa-solid fa-file-arrow-up"></i> Document Ingestion
+      </div>
+
+      <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+        <i class="fa-solid fa-cloud-arrow-up"></i>
+        <p style="font-size:0.9rem; font-weight:500;">Drop PDF or TXT here</p>
+        <p style="font-size:0.75rem; color:var(--text-muted); margin-top:0.3rem;">Supports .pdf, .txt, .md</p>
+        <input type="file" id="fileInput" hidden accept=".pdf,.txt,.md" onchange="uploadFile()">
+      </div>
+
+      <div id="uploadStatus" style="font-size:0.85rem; color:var(--primary-glow);"></div>
+
+      <div class="panel-title" style="margin-top: 1rem;">
+        <i class="fa-solid fa-database"></i> Vector Store Telemetry
+      </div>
+
+      <div class="stats-card">
+        <span>Indexed Chunks</span>
+        <span class="stat-val" id="statChunks">Loading...</span>
+      </div>
+      <div class="stats-card">
+        <span>Embedding Model</span>
+        <span class="stat-val" style="font-size:0.8rem;">all-MiniLM-L6-v2</span>
+      </div>
+      <div class="stats-card">
+        <span>Vector Index</span>
+        <span class="stat-val">FAISS CPU</span>
+      </div>
+    </div>
+
+    <!-- Right Main Panel: RAG Query & Synthesis -->
+    <div class="panel">
+      <div class="panel-title">
+        <i class="fa-solid fa-magnifying-glass"></i> Contextual RAG Query
+      </div>
+
+      <div class="query-box">
+        <input type="text" id="queryInput" class="input-field" placeholder="Ask any question regarding your indexed domain documents..." onkeydown="if(event.key==='Enter') executeQuery()">
+        <button class="btn-action" style="width: auto; padding: 0.85rem 1.5rem;" onclick="executeQuery()">
+          <i class="fa-solid fa-paper-plane"></i> Ask
+        </button>
+      </div>
+
+      <div class="panel-title" style="margin-top:0.5rem;">
+        <i class="fa-solid fa-robot"></i> Synthesized AI Response & Source Citations
+      </div>
+
+      <div class="answer-box" id="answerBox">
+        <p style="color:var(--text-muted); font-size:0.9rem;">
+          <i class="fa-solid fa-circle-info"></i> Upload a document on the left or type a query above to test real-time Retrieval-Augmented Generation.
+        </p>
+      </div>
+
+      <div id="sourcesContainer" style="display:flex; flex-direction:column; gap:0.75rem;"></div>
+    </div>
+  </div>
+
+  <footer>
+    DocuMind AI Engine — Powered by <strong>LangChain</strong>, <strong>FastAPI</strong>, & <strong>FAISS</strong> | Designed by Yuvaraju Mannem
+  </footer>
+
+  <script>
+    const API_BASE = "/api/v1";
+
+    async function fetchStats() {
+      try {
+        const res = await fetch(`${API_BASE}/vectorstore/stats`);
+        const data = await res.json();
+        document.getElementById('statChunks').innerText = data.total_vector_indexes || 0;
+      } catch(e) {
+        document.getElementById('statChunks').innerText = "Offline";
+      }
+    }
+
+    async function uploadFile() {
+      const input = document.getElementById('fileInput');
+      if(!input.files[0]) return;
+
+      const formData = new FormData();
+      formData.append('file', input.files[0]);
+
+      document.getElementById('uploadStatus').innerText = "Uploading & chunking vector index...";
+
+      try {
+        const res = await fetch(`${API_BASE}/documents/upload`, {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+
+        if(res.ok) {
+          document.getElementById('uploadStatus').innerText = `✅ Indexed '${data.filename}' into ${data.chunks_created} vectors!`;
+          fetchStats();
+        } else {
+          document.getElementById('uploadStatus').innerText = `❌ Error: ${data.detail}`;
+        }
+      } catch(e) {
+        document.getElementById('uploadStatus').innerText = "❌ Upload failed";
+      }
+    }
+
+    async function executeQuery() {
+      const q = document.getElementById('queryInput').value.trim();
+      if(!q) return;
+
+      const answerBox = document.getElementById('answerBox');
+      const sourcesContainer = document.getElementById('sourcesContainer');
+      
+      answerBox.innerHTML = '<p style="color:var(--primary-glow);"><i class="fa-solid fa-spinner fa-spin"></i> Retrieving dense vector context & generating response...</p>';
+      sourcesContainer.innerHTML = '';
+
+      try {
+        const res = await fetch(`${API_BASE}/rag/query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: q, top_k: 4 })
+        });
+        const data = await res.json();
+
+        if(res.ok) {
+          answerBox.innerHTML = `
+            <div style="line-height:1.6;">${data.answer.replace(/\n/g, '<br>')}</div>
+            <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.5rem;">
+              ⚡ Retrieval Latency: ${data.retrieval_latency_ms}ms | Generation Latency: ${data.generation_latency_ms}ms
+            </div>
+          `;
+
+          if(data.sources && data.sources.length > 0) {
+            let sourcesHTML = '<div class="panel-title"><i class="fa-solid fa-quote-left"></i> Retained Source Citations</div>';
+            data.sources.forEach((src, idx) => {
+              sourcesHTML += `
+                <div class="source-chip">
+                  <span class="score-badge">Similarity: ${(src.similarity_score * 100).toFixed(1)}%</span>
+                  <strong>Source ${idx+1}: ${src.source_file} (Page ${src.page_number})</strong>
+                  <p style="color:var(--text-muted); font-size:0.8rem; margin-top:0.3rem;">"${src.content_snippet}"</p>
+                </div>
+              `;
+            });
+            sourcesContainer.innerHTML = sourcesHTML;
+          }
+        } else {
+          answerBox.innerHTML = `<p style="color:#e74c3c;">Error: ${data.detail}</p>`;
+        }
+      } catch(e) {
+        answerBox.innerHTML = '<p style="color:#e74c3c;">Failed to reach RAG service.</p>';
+      }
+    }
+
+    fetchStats();
+  </script>
+</body>
+</html>
