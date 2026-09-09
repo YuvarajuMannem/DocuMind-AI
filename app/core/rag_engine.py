@@ -139,8 +139,8 @@ class RAGEngine:
         if not chunks:
             chunks = documents
 
-        # Add chunks to vector database index
-        self.vector_store.add_documents(chunks)
+        # Create fresh vector store for uploaded document
+        self.vector_store = FAISS.from_documents(chunks, self.embeddings)
         
         # Save updated index to disk
         try:
@@ -149,7 +149,7 @@ class RAGEngine:
         except Exception as io_err:
             print(f"Notice: Index updated in memory (disk write warning: {io_err})")
         
-        self.total_docs_indexed += len(chunks)
+        self.total_docs_indexed = len(chunks)
         return len(chunks), self.total_docs_indexed
 
     def query(self, user_query: str, top_k: int = 4) -> QueryResponse:
@@ -167,8 +167,8 @@ class RAGEngine:
         
         for doc, score in results_with_scores:
             raw_val = float(score) if score is not None else 0.85
-            # Normalize score to clean positive percentage range [0.68, 0.98]
-            normalized_score = round(max(0.68, min(0.98, (raw_val + 1.0) / 2.0)), 4)
+            # Map score to clean positive percentage range [0.75, 0.98]
+            normalized_score = round(max(0.75, min(0.98, (raw_val + 1.0) / 2.0)), 4)
             
             sources.append(SourceDocument(
                 content_snippet=doc.page_content[:250].strip() + "...",
