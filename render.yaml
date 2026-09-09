@@ -2,10 +2,8 @@ services:
   - type: web
     name: documind-ai
     env: python
-    buildCommand: pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && pip install --no-cache-dir -r requirements.txt && python -c "from fastembed import TextEmbedding; list(TextEmbedding('BAAI/bge-small-en-v1.5').embed(['test']))"
+    buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.12
-      - key: MALLOC_TRIM_THRESHOLD_
-        value: 100000
