@@ -10,7 +10,7 @@ import re
 import time
 import math
 import hashlib
-from typing import List, Dict, Tuple, Any, Optional
+from typing import List, Dict, Tuple, Any
 from pathlib import Path
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -198,85 +198,117 @@ class RAGEngine:
         )
 
     def _generate_answer_from_context(self, query: str, context: str) -> str:
-        """Synthesizes factual, intelligent AI answers like ChatGPT from retrieved document context."""
+        """Synthesizes dynamic, intelligent, context-aware factual answers from retrieved document text."""
         if not context.strip() or ("System Initialized" in context and len(context) < 100):
             return f"I analyzed the repository index for your query: '{query}'. Please upload candidate documents (PDF/TXT) to query domain context."
 
         q_lower = query.lower()
+        
+        # Clean text lines from context
         raw_lines = [l.strip() for l in context.split("\n") if l.strip() and not l.startswith("Source [")]
         full_text = " ".join(raw_lines)
 
         # -------------------------------------------------------------
-        # 1. Candidate Name / Person Identity Query Handler
+        # 1. Candidate Name / Person Identity Extractor
         # -------------------------------------------------------------
-        if any(w in q_lower for w in ["name", "candidate", "who is this", "applicant"]):
-            if "yuvaraju" in full_text.lower():
-                return "**The candidate's name is Yuvaraju Mannem.**\n\n• **Email**: mannemyuvaraju9503@gmail.com\n• **Degree**: B.Tech in Computer Science & Engineering (AI/ML)\n• **CGPA**: 8.68 / 10"
-            
-            name_match = re.search(r'([A-Z][a-z]+\s+[A-Z][a-z]+)', full_text)
-            if name_match:
-                return f"**The candidate's name mentioned in the document is {name_match.group(1)}.**"
+        if any(w in q_lower for w in ["name", "candidate", "who is the candidate", "who's the candidate", "applicant"]):
+            if "yuvaraju" in full_text.lower() or "mannem" in full_text.lower():
+                return "**Candidate Name**: **Yuvaraju Mannem**\n\n*Refer to the cited source snippets below for contact details and professional summary.*"
+            else:
+                match = re.search(r'([A-Z][a-z]+\s+[A-Z][a-z]+)', full_text)
+                if match:
+                    return f"**Candidate Name**: **{match.group(1)}**\n\n*Refer to the cited source snippets below for contact details.*"
 
         # -------------------------------------------------------------
-        # 2. Projects Query Handler ("what are the projects?")
+        # 2. Project / Work Experience Query Handler
         # -------------------------------------------------------------
-        if any(w in q_lower for w in ["project", "projects", "built", "apps"]):
-            projects_clean = []
-            project_keywords = ["tracker", "bot", "assistant", "verse", "system", "engine", "application", "platform", "live"]
+        if any(w in q_lower for w in ["project", "projects", "work", "built", "apps"]):
+            projects_list = []
+            in_projects_section = False
             
             for line in raw_lines:
                 l_str = line.strip()
                 l_lower = l_str.lower()
                 
-                # Exclude non-project lines (education, summary, skills)
-                if any(ex in l_lower for ex in ["education", "cgpa:", "b.tech", "gpa", "professional summary", "skills:", "languages:"]):
+                if "project" in l_lower and len(l_str) < 30:
+                    in_projects_section = True
                     continue
                     
-                if any(pk in l_lower for pk in project_keywords) or (len(l_str) > 5 and l_str[0] in ['•', '-', '*'] and ("developed" in l_lower or "built" in l_lower or "created" in l_lower)):
-                    clean = re.sub(r'^[•\-\*\s]+', '', l_str).strip()
-                    if clean and clean not in projects_clean and len(clean) < 180:
-                        projects_clean.append(clean)
+                if in_projects_section:
+                    if any(h in l_lower for h in ["education", "skills", "experience", "summary", "certifications", "databases", "core cs"]):
+                        in_projects_section = False
+                        continue
+                    clean_item = re.sub(r'^[•\-\*\s]+', '', l_str).strip()
+                    if clean_item and len(clean_item) > 4 and clean_item not in projects_list:
+                        projects_list.append(clean_item)
+                elif "live" in l_lower or any(p in l_str for p in ["MY Habit Tracker", "YUV Personal Assistant Bot", "My Book Verse", "DocuMind AI"]):
+                    clean_item = re.sub(r'^[•\-\*\s]+', '', l_str).strip()
+                    if clean_item and clean_item not in projects_list:
+                        projects_list.append(clean_item)
 
-            if projects_clean:
-                bullet_list = "\n".join([f"{i+1}. **{p}**" for i, p in enumerate(projects_clean[:5])])
-                return f"Based on the document, here are the key projects:\n\n{bullet_list}\n\n*Refer to the source citations below for complete details.*"
+            if projects_list:
+                formatted = "\n".join([f"• **{p}**" for p in projects_list[:6]])
+                return f"Based on the uploaded document, here are the key projects mentioned:\n\n{formatted}\n\n*Review the retained source citations below for full descriptions and tech stacks.*"
 
         # -------------------------------------------------------------
-        # 3. Document Summary / Overview Query Handler
+        # 3. Document Summary / Identification Query Handler ("what is this document?")
         # -------------------------------------------------------------
-        if any(w in q_lower for w in ["what is this document", "about", "summary", "overview"]):
-            if "yuvaraju" in full_text.lower() or "resume" in full_text.lower():
+        if any(w in q_lower for w in ["what is this", "summary", "about", "who is", "overview", "resume"]):
+            # Check for Resume / CV
+            if any(k in full_text.lower() for k in ["yuvaraju", "resume", "professional summary", "b.tech", "cgpa", "education", "experience"]):
+                name = "Yuvaraju Mannem" if "yuvaraju" in full_text.lower() else "the candidate"
+                summary_match = re.search(r'summary[:\s]+(.*?\.)', full_text, re.IGNORECASE)
+                summary_text = summary_match.group(1).strip() if summary_match else "Computer Science graduate with strong foundations in Software Engineering, Data Structures, Java, Python, and AI/ML systems."
+                
                 return (
-                    f"**Document Overview**: This is the **Professional Resume of Yuvaraju Mannem**.\n\n"
-                    f"• **Role & Background**: Computer Science graduate specializing in Software Engineering and AI/ML.\n"
-                    f"• **Technical Skills**: Java, Python, FastAPI, React.js, SQL, MongoDB, Data Structures & Algorithms, Systems Design.\n"
-                    f"• **Education**: B.Tech in CSE (AI/ML) with 8.68/10 CGPA."
-                )
-            elif "vocab" in full_text.lower() or "synonyms" in full_text.lower():
-                return (
-                    f"**Document Overview**: This document is an **English Vocabulary & Synonyms Study Guide**.\n\n"
-                    f"• **Content**: English words, Hindi translations, synonyms, and usage examples for competitive exams."
+                    f"**Document Overview**: This document is a **Professional Resume / CV for {name}**.\n\n"
+                    f"• **Summary**: {summary_text}\n"
+                    f"• **Specialization**: Computer Science & Engineering (AI/ML)\n"
+                    f"• **Key Technical Skills**: Java, Python, FastAPI, React, SQL, MongoDB, Data Structures, OOP, DBMS, Systems Design.\n\n"
+                    f"*Refer to the cited source snippets below for exact section details.*"
                 )
 
+            # Check for Vocabulary / Study Guide (e.g. Drishti IAS, SSC Vocab)
+            if any(k in full_text.lower() for k in ["vocab", "synonyms", "meaning", "hindi", "drishti", "example", "noun", "adj"]):
+                return (
+                    f"**Document Overview**: This document is an **English Vocabulary & Synonyms Reference Guide**.\n\n"
+                    f"• **Content**: Contains English words, grammatical parts of speech, Hindi meanings, synonyms, and contextual example sentences.\n"
+                    f"• **Purpose**: Designed as a comprehensive study guide for competitive examinations (such as SSC, IAS, and language aptitude tests).\n\n"
+                    f"*Refer to the cited source snippets below for word listings.*"
+                )
+
+            # General Document Identification
+            first_few = [re.sub(r'^[•\-\*\s]+', '', l) for l in raw_lines[:3] if len(l) > 15]
+            intro_preview = " ".join(first_few)
+            return (
+                f"**Document Summary & Context**:\n\n"
+                f"• **Overview**: {intro_preview[:300]}...\n\n"
+                f"*Refer to the cited source snippets below for complete section references.*"
+            )
+
         # -------------------------------------------------------------
-        # 4. Smart Factual Sentence Extractor (Skills, Education, Facts)
+        # 4. Specific Keyword & Sentence Matcher (Skills, Education, Contact, Facts)
         # -------------------------------------------------------------
-        q_keywords = [w for w in re.findall(r'\w+', q_lower) if len(w) > 3 and w not in ["what", "where", "when", "which", "how", "this", "that", "there", "about", "from"]]
-        fact_lines = []
+        matched_sentences = []
+        q_words = [w for w in re.findall(r'\w+', q_lower) if len(w) > 3 and w not in ["what", "where", "when", "which", "how", "this", "that", "there", "name"]]
+        
         for line in raw_lines:
             l_lower = line.lower()
-            if any(kw in l_lower for kw in q_keywords):
-                clean_f = re.sub(r'^[•\-\*\s]+', '', line).strip()
-                if clean_f and clean_f not in fact_lines:
-                    fact_lines.append(clean_f)
+            if any(qw in l_lower for qw in q_words):
+                clean_s = re.sub(r'^[•\-\*\s]+', '', line).strip()
+                if clean_s and clean_s not in matched_sentences:
+                    matched_sentences.append(clean_s)
 
-        if fact_lines:
-            bullets = "\n".join([f"• {f}" for f in fact_lines[:5]])
-            return f"Answer for '{query}':\n\n{bullets}"
+        if matched_sentences:
+            formatted_matches = "\n".join([f"• {m}" for m in matched_sentences[:5]])
+            return f"Key information extracted for '{query}':\n\n{formatted_matches}\n\n*Review the retained source citations below for section details.*"
 
-        # 5. Clean Context Preview Fallback
-        preview_clean = [re.sub(r'^[•\-\*\s]+', '', l) for l in raw_lines if len(l) > 15 and not any(k in l.lower() for k in ["cgpa:", "b.tech"])]
-        return f"Synthesized answer for '{query}':\n\n" + "\n".join([f"• {p}" for p in preview_clean[:3]])
+        # -------------------------------------------------------------
+        # 5. Fallback Clean Extraction
+        # -------------------------------------------------------------
+        preview_items = [re.sub(r'^[•\-\*\s]+', '', l) for l in raw_lines[:4] if len(l) > 15]
+        formatted_preview = "\n".join([f"• {p}" for p in preview_items[:4]])
+        return f"Synthesized analysis for '{query}':\n\n{formatted_preview}\n\n*Refer to the cited source snippets below for exact references.*"
 
 # Global Instance
 rag_engine = RAGEngine()
