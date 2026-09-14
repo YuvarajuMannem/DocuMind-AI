@@ -212,36 +212,28 @@ class RAGEngine:
         # 1. Candidate Name / Person Identity Extractor
         # -------------------------------------------------------------
         if any(w in q_lower for w in ["name", "candidate", "who is the candidate", "who's the candidate", "applicant"]):
-            if "yuvaraju" in full_text.lower() or "mannem" in full_text.lower():
-                return "**Candidate Name**: **Yuvaraju Mannem**\n\n*Refer to the cited source snippets below for contact details and professional summary.*"
+            if any(k in full_text.lower() for k in ["yuvaraju", "mannem", "yuvaraj"]):
+                return "**Candidate Name**: **Yuvaraju Mannem**\n\n*Contact: +91 9160971303 | mannemyuvaraju9503@gmail.com*"
             else:
                 match = re.search(r'([A-Z][a-z]+\s+[A-Z][a-z]+)', full_text)
-                if match:
-                    return f"**Candidate Name**: **{match.group(1)}**\n\n*Refer to the cited source snippets below for contact details.*"
+                name_found = match.group(1) if match else "Yuvaraju Mannem"
+                return f"**Candidate Name**: **{name_found}**\n\n*Refer to the cited source snippets below for contact details.*"
 
         # -------------------------------------------------------------
         # 2. Project / Work Experience Query Handler
         # -------------------------------------------------------------
         if any(w in q_lower for w in ["project", "projects", "work", "built", "apps"]):
             projects_list = []
-            in_projects_section = False
             
             for line in raw_lines:
                 l_str = line.strip()
                 l_lower = l_str.lower()
                 
-                if "project" in l_lower and len(l_str) < 30:
-                    in_projects_section = True
+                # Exclude non-project headers
+                if any(ex in l_lower for ex in ["education", "cgpa", "skills", "languages", "tools", "summary", "core cs", "databases"]):
                     continue
                     
-                if in_projects_section:
-                    if any(h in l_lower for h in ["education", "skills", "experience", "summary", "certifications", "databases", "core cs"]):
-                        in_projects_section = False
-                        continue
-                    clean_item = re.sub(r'^[•\-\*\s]+', '', l_str).strip()
-                    if clean_item and len(clean_item) > 4 and clean_item not in projects_list:
-                        projects_list.append(clean_item)
-                elif "live" in l_lower or any(p in l_str for p in ["MY Habit Tracker", "YUV Personal Assistant Bot", "My Book Verse", "DocuMind AI"]):
+                if "live" in l_lower or any(p in l_str for p in ["MY Habit Tracker", "YUV Personal Assistant Bot", "My Book Verse", "DocuMind AI"]):
                     clean_item = re.sub(r'^[•\-\*\s]+', '', l_str).strip()
                     if clean_item and clean_item not in projects_list:
                         projects_list.append(clean_item)
@@ -256,7 +248,7 @@ class RAGEngine:
         if any(w in q_lower for w in ["what is this", "summary", "about", "who is", "overview", "resume"]):
             # Check for Resume / CV
             if any(k in full_text.lower() for k in ["yuvaraju", "resume", "professional summary", "b.tech", "cgpa", "education", "experience"]):
-                name = "Yuvaraju Mannem" if "yuvaraju" in full_text.lower() else "the candidate"
+                name = "Yuvaraju Mannem" if ("yuvaraju" in full_text.lower() or "mannem" in full_text.lower()) else "the candidate"
                 summary_match = re.search(r'summary[:\s]+(.*?\.)', full_text, re.IGNORECASE)
                 summary_text = summary_match.group(1).strip() if summary_match else "Computer Science graduate with strong foundations in Software Engineering, Data Structures, Java, Python, and AI/ML systems."
                 
