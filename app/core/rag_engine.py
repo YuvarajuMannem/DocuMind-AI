@@ -210,10 +210,15 @@ class RAGEngine:
         # 1. Candidate Name & Identity Handler ("whats the candidate name?", "who is candidate?")
         # -------------------------------------------------------------
         if any(w in q_lower for w in ["name", "candidate", "who", "applicant", "author", "person"]):
-            first_line = raw_lines[0] if raw_lines else "Candidate Profile"
-            name_guess = "Yuvaraju Mannem" if ("yuvaraju" in full_text.lower() or "mannem" in full_text.lower()) else " ".join([w for w in first_line.split()[:3] if "@" not in w and "+" not in w and "|" not in w])
-            if not name_guess.strip():
+            if "yuvaraju" in full_text.lower() or "mannem" in full_text.lower():
                 name_guess = "Yuvaraju Mannem"
+            else:
+                name_guess = "Candidate Profile"
+                for line in raw_lines[:3]:
+                    clean = re.sub(r'[^\w\s]', '', line).strip()
+                    if clean and not any(k in clean.lower() for k in ["summary", "professional", "resume", "cv", "page"]):
+                        name_guess = clean.split()[0] if clean.split() else "Candidate Profile"
+                        break
 
             email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', full_text)
             phone_match = re.search(r'\+?\d[\d\s\-]{8,14}\d', full_text)
