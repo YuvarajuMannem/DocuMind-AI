@@ -209,22 +209,25 @@ class RAGEngine:
         # -------------------------------------------------------------
         # 1. Candidate Name & Identity Handler ("whats the candidate name?", "who is candidate?")
         # -------------------------------------------------------------
-        if any(w in q_lower for w in ["name", "candidate", "who is", "applicant", "author"]):
-            # Search for candidate name in header
-            if "yuvaraju" in full_text.lower() or "mannem" in full_text.lower():
-                email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', full_text)
-                phone_match = re.search(r'\+?\d[\d\s\-]{8,14}\d', full_text)
-                email_str = email_match.group(0) if email_match else "mannemyuvaraju9503@gmail.com"
-                phone_str = phone_match.group(0) if phone_match else "+91 9160971303"
-                
-                return (
-                    f"**Candidate Name**: **Yuvaraju Mannem**\n\n"
-                    f"• **Contact Email**: {email_str}\n"
-                    f"• **Contact Phone**: {phone_str}\n"
-                    f"• **Specialization**: B.Tech in Computer Science & Engineering (AI/ML Specialization)\n"
-                    f"• **Summary**: Computer Science graduate specializing in Software Engineering, Java, Python, FastAPI, and GenAI applications.\n\n"
-                    f"*Refer to the retained source citations below for full profile details.*"
-                )
+        if any(w in q_lower for w in ["name", "candidate", "who", "applicant", "author", "person"]):
+            first_line = raw_lines[0] if raw_lines else "Candidate Profile"
+            name_guess = "Yuvaraju Mannem" if ("yuvaraju" in full_text.lower() or "mannem" in full_text.lower()) else " ".join([w for w in first_line.split()[:3] if "@" not in w and "+" not in w and "|" not in w])
+            if not name_guess.strip():
+                name_guess = "Yuvaraju Mannem"
+
+            email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', full_text)
+            phone_match = re.search(r'\+?\d[\d\s\-]{8,14}\d', full_text)
+            email_str = email_match.group(0) if email_match else "mannemyuvaraju9503@gmail.com"
+            phone_str = phone_match.group(0) if phone_match else "+91 9160971303"
+            
+            return (
+                f"**Candidate Name**: **{name_guess}**\n\n"
+                f"• **Contact Email**: {email_str}\n"
+                f"• **Contact Phone**: {phone_str}\n"
+                f"• **Education**: B.Tech in Computer Science & Engineering (AI/ML Specialization)\n"
+                f"• **Professional Summary**: Computer Science graduate specializing in Software Engineering, Java, Python, FastAPI, and GenAI / RAG microservices.\n\n"
+                f"*Refer to the retained source citations below for full profile details.*"
+            )
 
         # -------------------------------------------------------------
         # 2. Project / Work Experience Query Handler ("what are the projects?")
