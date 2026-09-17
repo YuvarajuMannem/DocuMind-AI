@@ -215,9 +215,10 @@ class RAGEngine:
             else:
                 name_guess = "Candidate Profile"
                 for line in raw_lines[:3]:
-                    clean = re.sub(r'[^\w\s]', '', line).strip()
-                    if clean and not any(k in clean.lower() for k in ["summary", "professional", "resume", "cv", "page"]):
-                        name_guess = clean.split()[0] if clean.split() else "Candidate Profile"
+                    clean = re.sub(r'[\+\d\|\@\:\,\.\-]', ' ', line).strip()
+                    words = [w for w in clean.split() if len(w) > 2 and w.lower() not in ["professional", "summary", "resume", "cv", "page", "contact"]]
+                    if words:
+                        name_guess = " ".join(words[:2]).title()
                         break
 
             email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', full_text)
