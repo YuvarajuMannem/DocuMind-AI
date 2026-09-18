@@ -10,6 +10,8 @@ import re
 import time
 import math
 import hashlib
+import json
+import urllib.request
 from typing import List, Dict, Tuple, Any
 from pathlib import Path
 
@@ -197,10 +199,130 @@ class RAGEngine:
             total_tokens_estimated=estimated_tokens
         )
 
+    def _call_external_llm(self, query: str, context: str) -> str:
+        """Auto-detects and invokes external LLM API (Groq/Gemini/OpenAI/HuggingFace) for natural GPT responses."""
+        # Retrieve all potential env var keys
+        groq_key = os.getenv("GROQ_API_KEY") or os.getenv("GROQ_KEY") or ""
+        gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or ""
+        openai_key = os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_KEY") or ""
+        hf_key = os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN") or ""
+        generic_key = os.getenv("API_KEY") or os.getenv("LLM_API_KEY") or os.getenv("SECRET_KEY") or ""
+
+        # Auto-detect from generic_key prefix if standard keys are empty
+        if generic_key and not (groq_key or gemini_key or openai_key or hf_key):
+            if generic_key.startswith("gsk_"):
+                groq_key = generic_key
+            elif generic_key.startswith("AIza"):
+                gemini_key = generic_key
+            elif generic_key.startswith("sk-"):
+                openai_key = generic_key
+            elif generic_key.startswith("hf_"):
+                hf_key = generic_key
+            else:
+                groq_key = generic_key  # default fallback
+
+        prompt = (
+            "You are DocuMind AI, an expert enterprise document intelligence assistant.\n"
+            "Answer the user's question accurately, concisely, and professionally using ONLY the provided document context.\n\n"
+            f"[DOCUMENT CONTEXT]\n{context}\n\n"
+            f"[USER QUESTION]\n{query}\n\n"
+            "[ANSWER]"
+        )
+
+        # 1. Groq API Handler (Fast & Free)
+        if groq_key:
+            try:
+                url = "https://api.groq.com/openai/v1/chat/completions"
+                payload = {
+                    "model": "llama-3.1-8b-instant",
+                    "messages": [
+                        {"role": "system", "content": "You are a concise, accurate document AI assistant."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.2,
+                    "max_tokens": 500
+                }
+                req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {groq_key}"
+                })
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    return data["choices"][0]["message"]["content"].strip()
+            except Exception as err:
+                print(f"Groq API notice: {err}")
+
+        # 2. Google Gemini API Handler
+        if gemini_key:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
+                payload = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"temperature": 0.2, "maxOutputTokens": 500}
+                }
+                req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={
+                    "Content-Type": "application/json"
+                })
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            except Exception as err:
+                print(f"Gemini API notice: {err}")
+
+        # 3. OpenAI API Handler
+        if openai_key:
+            try:
+                url = "https://api.openai.com/v1/chat/completions"
+                payload = {
+                    "model": "gpt-3.5-turbo",
+                    "messages": [
+                        {"role": "system", "content": "You are a concise, accurate document AI assistant."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.2,
+                    "max_tokens": 500
+                }
+                req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {openai_key}"
+                })
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    return data["choices"][0]["message"]["content"].strip()
+            except Exception as err:
+                print(f"OpenAI API notice: {err}")
+
+        # 4. HuggingFace Inference API Handler
+        if hf_key:
+            try:
+                url = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
+                payload = {
+                    "inputs": f"<s>[INST] {prompt} [/INST]",
+                    "parameters": {"max_new_tokens": 500, "temperature": 0.2}
+                }
+                req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {hf_key}"
+                })
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    if isinstance(data, list) and len(data) > 0:
+                        gen_text = data[0].get("generated_text", "")
+                        return gen_text.split("[/INST]")[-1].strip()
+            except Exception as err:
+                print(f"HuggingFace API notice: {err}")
+
+        return None
+
     def _generate_answer_from_context(self, query: str, context: str) -> str:
         """Synthesizes dynamic, intelligent, context-aware factual answers from retrieved document text."""
         if not context.strip() or ("System Initialized" in context and len(context) < 100):
             return f"I analyzed the repository index for your query: '{query}'. Please upload candidate documents (PDF/TXT) to query domain context."
+
+        # Check if external LLM API key is present for full GPT generation
+        llm_answer = self._call_external_llm(query, context)
+        if llm_answer:
+            return llm_answer
 
         q_lower = query.lower()
         raw_lines = [l.strip() for l in context.split("\n") if l.strip() and not l.startswith("Source [")]
