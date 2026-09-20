@@ -246,30 +246,32 @@ class RAGEngine:
 
         # 1. Try Groq API (High-performance free inference)
         if groq_key:
-            try:
-                url = "https://api.groq.com/openai/v1/chat/completions"
-                payload = {
-                    "model": "llama-3.1-8b-instant",
-                    "messages": [
-                        {"role": "system", "content": "You are a concise, accurate document AI assistant."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    "temperature": 0.2,
-                    "max_tokens": 500
-                }
-                headers = {
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {groq_key}",
-                    "User-Agent": "DocuMind-AI/1.0"
-                }
-                req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
-                with urllib.request.urlopen(req, timeout=8) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    ans = data["choices"][0]["message"]["content"].strip()
-                    if ans:
-                        return ans
-            except Exception as err:
-                print(f"Groq LLM call notice: {err}")
+            groq_models = ["qwen/qwen3.8-27b", "groq/compound", "openai/gpt-oss-20b", "groq/compound-mini"]
+            url = "https://api.groq.com/openai/v1/chat/completions"
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {groq_key}",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+            for model_id in groq_models:
+                try:
+                    payload = {
+                        "model": model_id,
+                        "messages": [
+                            {"role": "system", "content": "You are a concise, accurate document AI assistant."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        "temperature": 0.2,
+                        "max_tokens": 600
+                    }
+                    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
+                    with urllib.request.urlopen(req, timeout=10) as resp:
+                        data = json.loads(resp.read().decode("utf-8"))
+                        ans = data["choices"][0]["message"]["content"].strip()
+                        if ans:
+                            return ans
+                except Exception as err:
+                    print(f"Groq LLM call notice ({model_id}): {err}")
 
         # 2. Try Google Gemini API (Free tier)
         if gemini_key:
