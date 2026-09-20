@@ -229,103 +229,166 @@ class RAGEngine:
         )
 
     def _call_external_llm(self, query: str, context: str) -> str:
-        """Invokes external LLM API (Groq/OpenAI) for natural conversational GPT responses if key is set."""
-        groq_key = os.getenv("GROQ_API_KEY", "")
-        openai_key = os.getenv("OPENAI_API_KEY", "")
-        api_key = groq_key or openai_key
-        
-        if not api_key:
-            return None
+        """Invokes external LLM APIs (Groq, Gemini, OpenAI, HuggingFace) for fluid conversational GPT responses."""
+        groq_key = os.getenv("GROQ_API_KEY", "").strip()
+        gemini_key = os.getenv("GEMINI_API_KEY", "").strip() or os.getenv("GOOGLE_API_KEY", "").strip()
+        openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+        hf_key = os.getenv("HUGGINGFACE_API_KEY", "").strip() or os.getenv("HF_TOKEN", "").strip()
 
-        url = "https://api.groq.com/openai/v1/chat/completions" if groq_key else "https://api.openai.com/v1/chat/completions"
-        model = "llama-3.1-8b-instant" if groq_key else "gpt-3.5-turbo"
+        prompt = (
+            f"You are DocuMind AI, an expert enterprise document intelligence assistant.\n"
+            f"Answer the user's question accurately, concisely, and professionally using ONLY the provided document context.\n"
+            f"Write a clear, natural English response.\n\n"
+            f"[DOCUMENT CONTEXT]\n{context}\n\n"
+            f"[USER QUESTION]\n{query}\n\n"
+            f"[ANSWER]"
+        )
 
-        prompt = f"You are DocuMind AI, an expert enterprise document intelligence assistant.\nAnswer the user's question accurately, concisely, and professionally using ONLY the provided document context.\n\n[DOCUMENT CONTEXT]\n{context}\n\n[USER QUESTION]\n{query}\n\n[ANSWER]"
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": "You are a concise, accurate document AI assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.2,
-            "max_tokens": 500
-        }
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-            "User-Agent": "DocuMind-AI/1.0"
-        }
-        try:
-            req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
-            with urllib.request.urlopen(req, timeout=8) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                return data["choices"][0]["message"]["content"].strip()
-        except Exception as err:
-            print(f"LLM API notice: {err}")
-            return None
+        # 1. Try Groq API (High-performance free inference)
+        if groq_key:
+            try:
+                url = "https://api.groq.com/openai/v1/chat/completions"
+                payload = {
+                    "model": "llama-3.1-8b-instant",
+                    "messages": [
+                        {"role": "system", "content": "You are a concise, accurate document AI assistant."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.2,
+                    "max_tokens": 500
+                }
+                headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {groq_key}",
+                    "User-Agent": "DocuMind-AI/1.0"
+                }
+                req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    ans = data["choices"][0]["message"]["content"].strip()
+                    if ans:
+                        return ans
+            except Exception as err:
+                print(f"Groq LLM call notice: {err}")
+
+        # 2. Try Google Gemini API (Free tier)
+        if gemini_key:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
+                payload = {"contents": [{"parts": [{"text": prompt}]}]}
+                headers = {"Content-Type": "application/json"}
+                req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    ans = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                    if ans:
+                        return ans
+            except Exception as err:
+                print(f"Gemini LLM call notice: {err}")
+
+        # 3. Try OpenAI API
+        if openai_key:
+            try:
+                url = "https://api.openai.com/v1/chat/completions"
+                payload = {
+                    "model": "gpt-3.5-turbo",
+                    "messages": [
+                        {"role": "system", "content": "You are a concise document AI assistant."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.2,
+                    "max_tokens": 500
+                }
+                headers = {"Content-Type": "application/json", "Authorization": f"Bearer {openai_key}"}
+                req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    ans = data["choices"][0]["message"]["content"].strip()
+                    if ans:
+                        return ans
+            except Exception as err:
+                print(f"OpenAI LLM call notice: {err}")
+
+        # 4. Try Hugging Face Serverless API
+        if hf_key:
+            try:
+                url = "https://api-inference.huggingface.co/models/Qwen/Qwen2.5-72B-Instruct/v1/chat/completions"
+                payload = {"model": "Qwen/Qwen2.5-72B-Instruct", "messages": [{"role": "user", "content": prompt}], "max_tokens": 500}
+                headers = {"Content-Type": "application/json", "Authorization": f"Bearer {hf_key}"}
+                req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    ans = data["choices"][0]["message"]["content"].strip()
+                    if ans:
+                        return ans
+            except Exception as err:
+                print(f"HF LLM call notice: {err}")
+
+        return None
 
     def _generate_answer_from_context(self, query: str, context: str) -> str:
-        """Synthesizes 100% dynamic, document-agnostic answers strictly from retrieved document context."""
+        """Synthesizes dynamic, document-agnostic answers strictly from retrieved document context."""
         if not context.strip() or ("System Initialized" in context and len(context) < 100):
             return f"I analyzed the repository index for your query: '{query}'. Please upload a document (PDF/TXT) to query domain context."
 
-        # 1. External LLM API Call (Groq / OpenAI) for full conversational GPT response
+        # 1. External LLM API Call (Groq / Gemini / OpenAI / HF) for full conversational GPT response
         llm_answer = self._call_external_llm(query, context)
         if llm_answer:
             return llm_answer
 
-        # 2. Dynamic Document-Agnostic Extractive Synthesizer (Fallback when no LLM key is configured)
+        # 2. Smart NLP Sentence Extractor & Formatter (Fallback when no LLM key is configured)
         q_lower = query.lower()
-        raw_lines = []
+        
+        # Clean lines: Filter out tiny fragments (<25 chars), page numbers, or noise
+        clean_sentences = []
         for line in context.split("\n"):
             line_str = line.strip()
             if line_str and not line_str.startswith("Source [") and not line_str.startswith("---"):
-                # Clean leading bullet markers
                 clean = re.sub(r'^[•\-\*\s]+', '', line_str).strip()
-                if clean and len(clean) > 10:
-                    raw_lines.append(clean)
+                # Exclude short word fragments under 25 chars
+                if len(clean) >= 25 and not clean.isdigit() and "http" not in clean.lower():
+                    if clean not in clean_sentences:
+                        clean_sentences.append(clean)
 
-        if not raw_lines:
-            return f"Retrieved relevant chunks for '{query}', but no plain text lines could be parsed. Refer to the cited source snippets below."
+        if not clean_sentences:
+            clean_sentences = [re.sub(r'^[•\-\*\s]+', '', l).strip() for l in context.split("\n") if len(l.strip()) > 10][:4]
 
-        # Extract question keywords (excluding common stop words)
+        # Case A: Objective / Summary / Overview Queries
+        is_summary_query = any(w in q_lower for w in ["summary", "about", "overview", "objective", "thesis", "purpose", "what is this", "summarize", "main topic"])
+        if is_summary_query:
+            summary_points = clean_sentences[:4]
+            formatted_summary = "\n".join([f"• {item}" for item in summary_points])
+            return (
+                f"### 📋 Document Context Overview & Core Findings\n\n"
+                f"Based on the retrieved sections of your uploaded document, here are the key findings:\n\n"
+                f"{formatted_summary}\n\n"
+                f"*(Note: Connect a free GROQ_API_KEY or GEMINI_API_KEY in Render environment settings for 100% full fluid AI conversational responses!)*"
+            )
+
+        # Case B: Specific Keyword Queries
         stop_words = {"what", "where", "when", "which", "how", "who", "whom", "this", "that", "there", "these", "those", "about", "is", "are", "was", "were", "the", "a", "an", "and", "or", "in", "on", "at", "to", "for", "with", "of", "from"}
         q_keywords = [w for w in re.findall(r'\w+', q_lower) if len(w) > 2 and w not in stop_words]
 
-        # Case A: Summary / Overview Query ("what is this document about?", "summary", "overview")
-        is_summary_query = any(w in q_lower for w in ["summary", "about", "overview", "what is this", "summarize", "main topic"])
-        if is_summary_query:
-            summary_items = []
-            for line in raw_lines:
-                if line not in summary_items:
-                    summary_items.append(line)
-                if len(summary_items) >= 5:
-                    break
-            formatted_summary = "\n".join([f"• {item}" for item in summary_items])
-            return f"**Synthesized Document Summary for '{query}'**:\n\n{formatted_summary}\n\n*Review the retained source citations below for complete context.*"
+        matched_sentences = []
+        for sent in clean_sentences:
+            if any(kw in sent.lower() for kw in q_keywords):
+                matched_sentences.append(sent)
 
-        # Case B: Keyword-matched extraction from retrieved context
-        matched_items = []
-        for line in raw_lines:
-            l_lower = line.lower()
-            if any(kw in l_lower for kw in q_keywords):
-                if line not in matched_items:
-                    matched_items.append(line)
+        if matched_sentences:
+            formatted_matches = "\n".join([f"• {m}" for m in matched_sentences[:5]])
+            return (
+                f"### 🔍 Key Document Findings for '{query}'\n\n"
+                f"{formatted_matches}\n\n"
+                f"*Refer to the cited source snippets below for exact section context.*"
+            )
 
-        if matched_items:
-            formatted_matches = "\n".join([f"• {item}" for item in matched_items[:5]])
-            return f"**Extracted Insights for '{query}'**:\n\n{formatted_matches}\n\n*Refer to the cited source snippets below for exact references.*"
-
-        # Case C: Fallback to top relevant retrieved document lines
-        fallback_items = []
-        for line in raw_lines:
-            if line not in fallback_items:
-                fallback_items.append(line)
-            if len(fallback_items) >= 4:
-                break
-                
-        formatted_fallback = "\n".join([f"• {item}" for item in fallback_items])
-        return f"**Synthesized Analysis for '{query}'**:\n\n{formatted_fallback}\n\n*Refer to the cited source snippets below for exact references.*"
+        # Case C: General Fallback Coherent Context Summary
+        formatted_fallback = "\n".join([f"• {item}" for item in clean_sentences[:4]])
+        return (
+            f"### 📖 Document Synthesized Analysis for '{query}'\n\n"
+            f"{formatted_fallback}\n\n"
+            f"*Refer to the cited source snippets below for section details.*"
+        )
 
 # Global Instance
 rag_engine = RAGEngine()
