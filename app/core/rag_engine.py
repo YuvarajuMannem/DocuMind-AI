@@ -325,7 +325,7 @@ class RAGEngine:
                 break
                 
         formatted_fallback = "\n".join([f"• {item}" for item in fallback_items])
-        return f"**Synthesized Analysis for '{query}'**:\n\n{formatted_fallback}\n\n*Refer to the cited source snippets below for exact references.*"e snippets below for exact references.*"
+        return f"**Synthesized Analysis for '{query}'**:\n\n{formatted_fallback}\n\n*Refer to the cited source snippets below for exact references.*"
 
 # Global Instance
 rag_engine = RAGEngine()
