@@ -64,6 +64,7 @@ class RAGEngine:
     def __init__(self):
         self._embeddings = LightweightEmbeddings(dim=384)
         self.vector_store: FAISS = None
+        self.active_filename: str = None
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=settings.CHUNK_SIZE,
             chunk_overlap=settings.CHUNK_OVERLAP,
@@ -76,7 +77,17 @@ class RAGEngine:
         return self._embeddings
 
     def _ensure_vector_store(self):
-        """Initializes FAISS vector store."""
+        """Initializes FAISS vector store and restores active document metadata."""
+        # Read active document tracking metadata if available
+        meta_path = Path(settings.VECTOR_DB_DIR) / "active_doc.json"
+        if meta_path.exists():
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    meta_data = json.load(f)
+                    self.active_filename = meta_data.get("active_filename")
+            except Exception:
+                pass
+
         if self.vector_store is not None:
             return
             
@@ -102,9 +113,7 @@ class RAGEngine:
         self.total_docs_indexed = 1
 
     def process_and_index_document(self, file_path: str, filename: str) -> Tuple[int, int]:
-        """Loads file, splits into semantic chunks, and indexes vectors in FAISS."""
-        self._ensure_vector_store()
-        
+        """Loads file, splits into semantic chunks, and creates an isolated index for the active document."""
         ext = os.path.splitext(filename)[1].lower()
         documents = []
         
@@ -142,13 +151,16 @@ class RAGEngine:
         if not chunks:
             chunks = documents
 
-        # Create fresh vector store for uploaded document
+        # Set active document name and build fresh vector store for THIS document exclusively
+        self.active_filename = filename
         self.vector_store = FAISS.from_documents(chunks, self.embeddings)
         
-        # Save updated index to disk
+        # Save fresh index and active document tracking metadata to disk
         try:
             os.makedirs(settings.VECTOR_DB_DIR, exist_ok=True)
             self.vector_store.save_local(settings.VECTOR_DB_DIR)
+            with open(Path(settings.VECTOR_DB_DIR) / "active_doc.json", "w", encoding="utf-8") as f:
+                json.dump({"active_filename": filename}, f)
         except Exception as io_err:
             print(f"Notice: Index updated in memory (disk write warning: {io_err})")
         
@@ -161,16 +173,33 @@ class RAGEngine:
         
         start_retrieval = time.time()
         
-        # Vector Similarity Search with relevance scores
-        results_with_scores = self.vector_store.similarity_search_with_relevance_scores(user_query, k=top_k)
+        # Fetch candidate vector chunks (broader pool for active document filtering)
+        raw_results = self.vector_store.similarity_search_with_relevance_scores(user_query, k=top_k * 3)
         retrieval_latency = (time.time() - start_retrieval) * 1000
         
+        # Filter results strictly to the active document
+        filtered_results = []
+        for doc, score in raw_results:
+            source_file = doc.metadata.get("source", "")
+            if source_file == "system":
+                continue
+            # If an active document is set, reject any chunks from previous documents
+            if self.active_filename and source_file and source_file != self.active_filename:
+                continue
+            filtered_results.append((doc, score))
+
+        # Fallback if filter returned empty (e.g. initial state)
+        if not filtered_results and raw_results:
+            filtered_results = [r for r in raw_results if r[0].metadata.get("source") != "system"]
+
+        # Limit to top_k
+        final_results = filtered_results[:top_k]
+
         sources: List[SourceDocument] = []
         context_blocks = []
         
-        for doc, score in results_with_scores:
+        for doc, score in final_results:
             raw_val = float(score) if score is not None else 0.85
-            # Map score to clean positive percentage range [0.75, 0.98]
             normalized_score = round(max(0.75, min(0.98, (raw_val + 1.0) / 2.0)), 4)
             
             sources.append(SourceDocument(
@@ -200,244 +229,103 @@ class RAGEngine:
         )
 
     def _call_external_llm(self, query: str, context: str) -> str:
-        """Auto-detects and invokes external LLM API (Groq/Gemini/OpenAI/HuggingFace) for natural GPT responses."""
-        # Retrieve all potential env var keys
-        groq_key = os.getenv("GROQ_API_KEY") or os.getenv("GROQ_KEY") or ""
-        gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or ""
-        openai_key = os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_KEY") or ""
-        hf_key = os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN") or ""
-        generic_key = os.getenv("API_KEY") or os.getenv("LLM_API_KEY") or os.getenv("SECRET_KEY") or ""
+        """Invokes external LLM API (Groq/OpenAI) for natural conversational GPT responses if key is set."""
+        groq_key = os.getenv("GROQ_API_KEY", "")
+        openai_key = os.getenv("OPENAI_API_KEY", "")
+        api_key = groq_key or openai_key
+        
+        if not api_key:
+            return None
 
-        # Auto-detect from generic_key prefix if standard keys are empty
-        if generic_key and not (groq_key or gemini_key or openai_key or hf_key):
-            if generic_key.startswith("gsk_"):
-                groq_key = generic_key
-            elif generic_key.startswith("AIza"):
-                gemini_key = generic_key
-            elif generic_key.startswith("sk-"):
-                openai_key = generic_key
-            elif generic_key.startswith("hf_"):
-                hf_key = generic_key
-            else:
-                groq_key = generic_key  # default fallback
+        url = "https://api.groq.com/openai/v1/chat/completions" if groq_key else "https://api.openai.com/v1/chat/completions"
+        model = "llama-3.1-8b-instant" if groq_key else "gpt-3.5-turbo"
 
-        prompt = (
-            "You are DocuMind AI, an expert enterprise document intelligence assistant.\n"
-            "Answer the user's question accurately, concisely, and professionally using ONLY the provided document context.\n\n"
-            f"[DOCUMENT CONTEXT]\n{context}\n\n"
-            f"[USER QUESTION]\n{query}\n\n"
-            "[ANSWER]"
-        )
-
-        # 1. Groq API Handler (Fast & Free)
-        if groq_key:
-            try:
-                url = "https://api.groq.com/openai/v1/chat/completions"
-                payload = {
-                    "model": "llama-3.1-8b-instant",
-                    "messages": [
-                        {"role": "system", "content": "You are a concise, accurate document AI assistant."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    "temperature": 0.2,
-                    "max_tokens": 500
-                }
-                req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {groq_key}"
-                })
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    return data["choices"][0]["message"]["content"].strip()
-            except Exception as err:
-                print(f"Groq API notice: {err}")
-
-        # 2. Google Gemini API Handler
-        if gemini_key:
-            try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
-                payload = {
-                    "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {"temperature": 0.2, "maxOutputTokens": 500}
-                }
-                req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={
-                    "Content-Type": "application/json"
-                })
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            except Exception as err:
-                print(f"Gemini API notice: {err}")
-
-        # 3. OpenAI API Handler
-        if openai_key:
-            try:
-                url = "https://api.openai.com/v1/chat/completions"
-                payload = {
-                    "model": "gpt-3.5-turbo",
-                    "messages": [
-                        {"role": "system", "content": "You are a concise, accurate document AI assistant."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    "temperature": 0.2,
-                    "max_tokens": 500
-                }
-                req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {openai_key}"
-                })
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    return data["choices"][0]["message"]["content"].strip()
-            except Exception as err:
-                print(f"OpenAI API notice: {err}")
-
-        # 4. HuggingFace Inference API Handler
-        if hf_key:
-            try:
-                url = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
-                payload = {
-                    "inputs": f"<s>[INST] {prompt} [/INST]",
-                    "parameters": {"max_new_tokens": 500, "temperature": 0.2}
-                }
-                req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {hf_key}"
-                })
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    if isinstance(data, list) and len(data) > 0:
-                        gen_text = data[0].get("generated_text", "")
-                        return gen_text.split("[/INST]")[-1].strip()
-            except Exception as err:
-                print(f"HuggingFace API notice: {err}")
-
-        return None
+        prompt = f"You are DocuMind AI, an expert enterprise document intelligence assistant.\nAnswer the user's question accurately, concisely, and professionally using ONLY the provided document context.\n\n[DOCUMENT CONTEXT]\n{context}\n\n[USER QUESTION]\n{query}\n\n[ANSWER]"
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "You are a concise, accurate document AI assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.2,
+            "max_tokens": 500
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+            "User-Agent": "DocuMind-AI/1.0"
+        }
+        try:
+            req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return data["choices"][0]["message"]["content"].strip()
+        except Exception as err:
+            print(f"LLM API notice: {err}")
+            return None
 
     def _generate_answer_from_context(self, query: str, context: str) -> str:
-        """Synthesizes dynamic, intelligent, context-aware factual answers from retrieved document text."""
+        """Synthesizes 100% dynamic, document-agnostic answers strictly from retrieved document context."""
         if not context.strip() or ("System Initialized" in context and len(context) < 100):
-            return f"I analyzed the repository index for your query: '{query}'. Please upload candidate documents (PDF/TXT) to query domain context."
+            return f"I analyzed the repository index for your query: '{query}'. Please upload a document (PDF/TXT) to query domain context."
 
-        # Check if external LLM API key is present for full GPT generation
+        # 1. External LLM API Call (Groq / OpenAI) for full conversational GPT response
         llm_answer = self._call_external_llm(query, context)
         if llm_answer:
             return llm_answer
 
+        # 2. Dynamic Document-Agnostic Extractive Synthesizer (Fallback when no LLM key is configured)
         q_lower = query.lower()
-        raw_lines = [l.strip() for l in context.split("\n") if l.strip() and not l.startswith("Source [")]
-        full_text = " ".join(raw_lines)
+        raw_lines = []
+        for line in context.split("\n"):
+            line_str = line.strip()
+            if line_str and not line_str.startswith("Source [") and not line_str.startswith("---"):
+                # Clean leading bullet markers
+                clean = re.sub(r'^[•\-\*\s]+', '', line_str).strip()
+                if clean and len(clean) > 10:
+                    raw_lines.append(clean)
 
-        # -------------------------------------------------------------
-        # 1. Candidate Name & Identity Handler ("whats the candidate name?", "who is candidate?")
-        # -------------------------------------------------------------
-        if any(w in q_lower for w in ["name", "candidate", "who", "applicant", "author", "person"]):
-            if "yuvaraju" in full_text.lower() or "mannem" in full_text.lower():
-                name_guess = "Yuvaraju Mannem"
-            else:
-                name_guess = "Candidate Profile"
-                for line in raw_lines[:3]:
-                    clean = re.sub(r'[\+\d\|\@\:\,\.\-]', ' ', line).strip()
-                    words = [w for w in clean.split() if len(w) > 2 and w.lower() not in ["professional", "summary", "resume", "cv", "page", "contact"]]
-                    if words:
-                        name_guess = " ".join(words[:2]).title()
-                        break
+        if not raw_lines:
+            return f"Retrieved relevant chunks for '{query}', but no plain text lines could be parsed. Refer to the cited source snippets below."
 
-            email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', full_text)
-            phone_match = re.search(r'\+?\d[\d\s\-]{8,14}\d', full_text)
-            email_str = email_match.group(0) if email_match else "mannemyuvaraju9503@gmail.com"
-            phone_str = phone_match.group(0) if phone_match else "+91 9160971303"
-            
-            return (
-                f"**Candidate Name**: **{name_guess}**\n\n"
-                f"• **Contact Email**: {email_str}\n"
-                f"• **Contact Phone**: {phone_str}\n"
-                f"• **Education**: B.Tech in Computer Science & Engineering (AI/ML Specialization)\n"
-                f"• **Professional Summary**: Computer Science graduate specializing in Software Engineering, Java, Python, FastAPI, and GenAI / RAG microservices.\n\n"
-                f"*Refer to the retained source citations below for full profile details.*"
-            )
+        # Extract question keywords (excluding common stop words)
+        stop_words = {"what", "where", "when", "which", "how", "who", "whom", "this", "that", "there", "these", "those", "about", "is", "are", "was", "were", "the", "a", "an", "and", "or", "in", "on", "at", "to", "for", "with", "of", "from"}
+        q_keywords = [w for w in re.findall(r'\w+', q_lower) if len(w) > 2 and w not in stop_words]
 
-        # -------------------------------------------------------------
-        # 2. Project / Work Experience Query Handler ("what are the projects?")
-        # -------------------------------------------------------------
-        if any(w in q_lower for w in ["project", "projects", "work", "built", "app", "apps"]):
-            projects_list = []
-            
-            # Specific project titles in Yuvaraju's resume & general documents
-            project_keywords = ["habit tracker", "personal assistant", "book verse", "documind", "tracker", "bot", "assistant", "verse", "system"]
-            
+        # Case A: Summary / Overview Query ("what is this document about?", "summary", "overview")
+        is_summary_query = any(w in q_lower for w in ["summary", "about", "overview", "what is this", "summarize", "main topic"])
+        if is_summary_query:
+            summary_items = []
             for line in raw_lines:
-                l_lower = line.lower()
-                # Exclude summary lines or skill list lines
-                if any(ex in l_lower for ex in ["b.tech", "cgpa", "gramming", "database-driven", "core cs", "skills:", "languages:"]):
-                    continue
-                    
-                # Match line if it contains project keywords or starts with project bullet title
-                if any(pk in l_lower for pk in project_keywords) or ("live" in l_lower and len(line) < 140):
-                    clean_item = re.sub(r'^[•\-\*\s]+', '', line).strip()
-                    if clean_item and clean_item not in projects_list and len(clean_item) < 160:
-                        projects_list.append(clean_item)
+                if line not in summary_items:
+                    summary_items.append(line)
+                if len(summary_items) >= 5:
+                    break
+            formatted_summary = "\n".join([f"• {item}" for item in summary_items])
+            return f"**Synthesized Document Summary for '{query}'**:\n\n{formatted_summary}\n\n*Review the retained source citations below for complete context.*"
 
-            # Fallback project search if resume formatting has inline titles
-            if not projects_list and "projects" in full_text.lower():
-                if "habit tracker" in full_text.lower():
-                    projects_list.append("MY Habit Tracker Live — Full-stack daily habit tracking application.")
-                if "personal assistant" in full_text.lower():
-                    projects_list.append("YUV Personal Assistant Bot Live — AI-powered productivity assistant.")
-                if "book verse" in full_text.lower():
-                    projects_list.append("My Book Verse Live — Digital library & book discovery platform.")
-                if "documind" in full_text.lower():
-                    projects_list.append("DocuMind AI Live — Enterprise RAG Document Intelligence Engine.")
-
-            if projects_list:
-                formatted = "\n".join([f"• **{p}**" for p in projects_list[:6]])
-                return f"Based on the uploaded document, here are the key projects mentioned:\n\n{formatted}\n\n*Review the retained source citations below for complete descriptions and tech stacks.*"
-
-        # -------------------------------------------------------------
-        # 3. Document Summary / Overview Query Handler ("what is this document about?")
-        # -------------------------------------------------------------
-        if any(w in q_lower for w in ["what is this", "summary", "about", "who is", "overview", "resume"]):
-            if any(k in full_text.lower() for k in ["yuvaraju", "resume", "professional summary", "b.tech", "cgpa", "education", "experience"]):
-                return (
-                    f"**Document Overview**: This document is the **Professional Resume / CV of Yuvaraju Mannem**.\n\n"
-                    f"• **Candidate**: Yuvaraju Mannem (Computer Science Graduate)\n"
-                    f"• **Specialization**: CSE with AI & Machine Learning Specialization\n"
-                    f"• **Technical Skills**: Java, Python, SQL, FastAPI, React.js, Node.js, MongoDB, Data Structures, DBMS, OOP.\n"
-                    f"• **Core Focus**: Software Engineering, Backend API Development, and GenAI / RAG Systems.\n\n"
-                    f"*Refer to the cited source snippets below for exact section details.*"
-                )
-
-            if any(k in full_text.lower() for k in ["vocab", "synonyms", "meaning", "hindi", "drishti", "example"]):
-                return (
-                    f"**Document Overview**: This document is an **English Vocabulary & Synonyms Study Guide** (Drishti IAS / SSC Preparation).\n\n"
-                    f"• **Content**: Contains English words, Hindi meanings, synonyms, antonyms, and usage examples.\n"
-                    f"• **Purpose**: Exam preparation resource for English vocabulary and language comprehension.\n\n"
-                    f"*Refer to the cited source snippets below for word listings.*"
-                )
-
-        # -------------------------------------------------------------
-        # 4. Specific Keyword & Sentence Matcher (Skills, Education, Contact, Facts)
-        # -------------------------------------------------------------
-        matched_sentences = []
-        q_words = [w for w in re.findall(r'\w+', q_lower) if len(w) > 3 and w not in ["what", "where", "when", "which", "how", "this", "that", "there"]]
-        
+        # Case B: Keyword-matched extraction from retrieved context
+        matched_items = []
         for line in raw_lines:
             l_lower = line.lower()
-            if any(qw in l_lower for qw in q_words):
-                clean_s = re.sub(r'^[•\-\*\s]+', '', line).strip()
-                if clean_s and clean_s not in matched_sentences and len(clean_s) > 15:
-                    matched_sentences.append(clean_s)
+            if any(kw in l_lower for kw in q_keywords):
+                if line not in matched_items:
+                    matched_items.append(line)
 
-        if matched_sentences:
-            formatted_matches = "\n".join([f"• {m}" for m in matched_sentences[:5]])
-            return f"Key information extracted for '{query}':\n\n{formatted_matches}\n\n*Review the retained source citations below for section details.*"
+        if matched_items:
+            formatted_matches = "\n".join([f"• {item}" for item in matched_items[:5]])
+            return f"**Extracted Insights for '{query}'**:\n\n{formatted_matches}\n\n*Refer to the cited source snippets below for exact references.*"
 
-        # -------------------------------------------------------------
-        # 5. Fallback Clean Extraction
-        # -------------------------------------------------------------
-        preview_items = [re.sub(r'^[•\-\*\s]+', '', l) for l in raw_lines[:4] if len(l) > 15]
-        formatted_preview = "\n".join([f"• {p}" for p in preview_items[:4]])
-        return f"Synthesized analysis for '{query}':\n\n{formatted_preview}\n\n*Refer to the cited source snippets below for exact references.*"
+        # Case C: Fallback to top relevant retrieved document lines
+        fallback_items = []
+        for line in raw_lines:
+            if line not in fallback_items:
+                fallback_items.append(line)
+            if len(fallback_items) >= 4:
+                break
+                
+        formatted_fallback = "\n".join([f"• {item}" for item in fallback_items])
+        return f"**Synthesized Analysis for '{query}'**:\n\n{formatted_fallback}\n\n*Refer to the cited source snippets below for exact references.*"e snippets below for exact references.*"
 
 # Global Instance
 rag_engine = RAGEngine()
